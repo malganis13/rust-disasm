@@ -516,6 +516,12 @@ mod tests {
         let exe = std::env::current_exe().unwrap();
         let bin = Binary::from_path(exe).unwrap();
         let a = Analysis::run(&bin);
+        assert!(!a.strings.is_empty());
+        if bin.arch.bitness().is_none() {
+            // Non-x86 host (e.g. Apple Silicon): loader-only analysis.
+            assert_eq!(a.function_count(), 0);
+            return;
+        }
         assert!(a.function_count() > 10);
         assert!(a.xrefs.len() > 10);
     }
