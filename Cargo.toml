@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/disasm-core",
+    "crates/decompiler",
+    "crates/gui",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+authors = ["Rust Disasm Engine Contributors"]
+repository = "https://github.com/malganis13/rust-disasm"
+
+[workspace.dependencies]
+goblin = "0.8"
+object = "0.36"
+iced-x86 = { version = "1.21", default-features = false }
+petgraph = "0.6"
+dashmap = "6"
+rayon = "1.10"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rhai = "1.19"
+clap = { version = "4", features = ["derive"] }
+eframe = { version = "0.28", default-features = false }
+egui = "0.28"
+serde = { version = "1", features = ["derive"] }
+
+disasm-core = { path = "crates/disasm-core" }
+decompiler = { path = "crates/decompiler" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"

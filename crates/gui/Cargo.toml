@@ -1,0 +1,21 @@
+[package]
+name = "rdisasm-gui"
+description = "Interactive egui desktop front-end: CFG graph, hex view, functions, strings and decompiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rdisasm-gui"
+path = "src/main.rs"
+
+[dependencies]
+disasm-core.workspace = true
+decompiler.workspace = true
+eframe = { workspace = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui.workspace = true
+petgraph.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

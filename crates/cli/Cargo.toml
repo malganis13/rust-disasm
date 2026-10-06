@@ -1,0 +1,23 @@
+[package]
+name = "rdisasm"
+description = "Headless CLI for batch binary analysis, decompilation, export and Rhai scripting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rdisasm"
+path = "src/main.rs"
+
+[dependencies]
+disasm-core.workspace = true
+decompiler.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+rayon.workspace = true
+rhai = { workspace = true, features = ["sync"] }
+serde.workspace = true
+serde_json = "1"
+tracing.workspace = true
+tracing-subscriber.workspace = true

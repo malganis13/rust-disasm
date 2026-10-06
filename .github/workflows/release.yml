@@ -1,0 +1,58 @@
+name: Release
+
+# Builds platform binaries and attaches them to a published GitHub release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload to (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: ".exe" }
+          - { os: macos-latest,   target: aarch64-apple-darwin,   ext: "" }
+          - { os: macos-13,       target: x86_64-apple-darwin,    ext: "" }
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --workspace --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name="rdisasm-${TAG}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp target/${{ matrix.target }}/release/rdisasm${{ matrix.ext }} "dist/$name/"
+          cp target/${{ matrix.target }}/release/rdisasm-gui${{ matrix.ext }} "dist/$name/"
+          cp README.md LICENSE "dist/$name/"
+          cp -r examples "dist/$name/"
+          cd dist
+          if [[ "${{ matrix.os }}" == windows-* ]]; then
+            7z a "$name.zip" "$name" >/dev/null
+            echo "ASSET=dist/$name.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$name.tar.gz" "$name"
+            echo "ASSET=dist/$name.tar.gz" >> "$GITHUB_ENV"
+          fi
+      - name: Upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ASSET" --clobber
