@@ -46,6 +46,14 @@ fn counting_loop() {
 fn whole_self_binary_does_not_panic() {
     let exe = std::env::current_exe().unwrap();
     let bin = Binary::from_path(exe).unwrap();
+    if bin.arch.bitness().is_none() {
+        // Host is not x86 (e.g. Apple Silicon): the decompiler must refuse cleanly.
+        let a = Analysis::run(&bin);
+        if let Some(f) = a.functions().next() {
+            assert!(decompiler::decompile(f, bin.arch).is_err());
+        }
+        return;
+    }
     let a = Analysis::run(&bin);
     let mut ok = 0;
     for f in a.functions().take(300) {
