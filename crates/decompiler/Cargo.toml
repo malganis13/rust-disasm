@@ -12,3 +12,4 @@ iced-x86 = { workspace = true, features = ["decoder", "intel", "instr_info", "st
 petgraph.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+rayon.workspace = true

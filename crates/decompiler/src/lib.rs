@@ -9,6 +9,7 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms)]
 
+pub mod context;
 pub mod emit;
 pub mod ir;
 pub mod lift;
@@ -28,15 +29,25 @@ pub enum DecompileError {
     Arch(Arch),
 }
 
-/// Decompile one function into C pseudocode.
+pub use context::{CallConv, Context};
+
+/// Decompile one function with no whole-program knowledge.
+/// Prefer [`decompile_with`] with a shared [`Context`] for named calls,
+/// call arguments, strings and globals.
 pub fn decompile(func: &Function, arch: Arch) -> Result<String, DecompileError> {
-    let bits = arch.bitness().ok_or(DecompileError::Arch(arch))?;
-    let mut irf = lift::lift_function(func, bits)?;
+    arch.bitness().ok_or(DecompileError::Arch(arch))?;
+    let fmt = disasm_core::loader::Format::Raw;
+    decompile_with(func, &Context::bare(fmt, arch))
+}
+
+/// Decompile one function into Hex-Rays–style C pseudocode.
+pub fn decompile_with(func: &Function, ctx: &Context) -> Result<String, DecompileError> {
+    let mut irf = lift::lift_function(func, ctx)?;
     ssa::construct(&mut irf);
     passes::optimize(&mut irf);
     ssa::destruct(&mut irf);
     passes::post_destruct(&mut irf);
-    let sig = types::infer(&irf, bits);
+    let sig = types::infer(&irf, ctx);
     let ast = structure::structure(&irf);
-    Ok(emit::emit_function(&func.name, &irf, &sig, &ast))
+    Ok(emit::emit_function(&func.name, &irf, &sig, &ast, ctx))
 }

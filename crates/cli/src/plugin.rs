@@ -95,7 +95,8 @@ impl Project {
 
     fn decompile(&mut self, a: INT) -> String {
         match self.analysis.function_containing(addr(a)) {
-            Some(f) => decompiler::decompile(f, self.binary.arch).unwrap_or_else(|e| format!("// {e}")),
+            Some(f) => decompiler::decompile_with(f, &decompiler::Context::new(&self.binary, &self.analysis))
+                .unwrap_or_else(|e| format!("// {e}")),
             None => format!("// no function at {:#x}", a),
         }
     }

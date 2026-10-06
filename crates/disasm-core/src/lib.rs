@@ -21,6 +21,7 @@
 pub mod analysis;
 pub mod cfg;
 pub mod disasm;
+pub mod entry;
 pub mod error;
 pub mod loader;
 pub mod strings;

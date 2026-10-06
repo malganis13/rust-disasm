@@ -7,8 +7,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::context::Context;
 use crate::ir::*;
-use crate::lift::ARG_REGS_SYSV;
 
 /// A recovered C type.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,8 +23,15 @@ impl std::fmt::Display for CType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CType::Void => write!(f, "void"),
-            CType::Int(w) => write!(f, "int{}_t", *w as u32 * 8),
-            CType::UInt(w) => write!(f, "uint{}_t", *w as u32 * 8),
+            // Hex-Rays spelling.
+            CType::Int(1) => write!(f, "char"),
+            CType::Int(2) => write!(f, "__int16"),
+            CType::Int(4) => write!(f, "int"),
+            CType::Int(_) => write!(f, "__int64"),
+            CType::UInt(1) => write!(f, "unsigned __int8"),
+            CType::UInt(2) => write!(f, "unsigned __int16"),
+            CType::UInt(4) => write!(f, "unsigned int"),
+            CType::UInt(_) => write!(f, "unsigned __int64"),
             CType::Ptr => write!(f, "void *"),
         }
     }
@@ -40,14 +47,15 @@ pub struct Signature {
 }
 
 /// Infer a signature and local variable types for a lifted function.
-pub fn infer(f: &IrFunction, bits: u32) -> Signature {
-    let ptr = (bits / 8) as u8;
+pub fn infer(f: &IrFunction, ctx: &Context) -> Signature {
+    let ptr = (ctx.bits / 8) as u8;
+    let arg_regs = ctx.conv.arg_regs();
 
     // 1. Which argument registers are read before any write? => parameters.
     let mut params = Vec::new();
-    let read_args = live_in_args(f);
+    let read_args = live_in_args(f, arg_regs);
     // Parameters are positional: include every register up to the last one used.
-    let last = ARG_REGS_SYSV.iter().rposition(|r| read_args.contains(*r));
+    let last = arg_regs.iter().rposition(|r| read_args.contains(*r));
     if let Some(last) = last {
         for i in 0..=last {
             params.push((format!("a{}", i + 1), CType::Int(ptr.min(8))));
@@ -131,7 +139,7 @@ fn expr_type(e: &Expr, ptr: u8) -> CType {
 
 /// Argument registers used with SSA version 0, i.e. read before any
 /// definition dominates the use: the function's live-in parameters.
-fn live_in_args(f: &IrFunction) -> BTreeSet<&'static str> {
+fn live_in_args(f: &IrFunction, arg_regs: &[&'static str]) -> BTreeSet<&'static str> {
     let mut read: BTreeSet<&'static str> = BTreeSet::new();
     let mut visit = |v: &Var| {
         if let (Location::Reg(r), 0) = (&v.loc, v.version) {
@@ -144,5 +152,5 @@ fn live_in_args(f: &IrFunction) -> BTreeSet<&'static str> {
         }
         b.term.for_each_use(&mut visit);
     }
-    ARG_REGS_SYSV.into_iter().filter(|r| read.contains(r)).collect()
+    arg_regs.iter().copied().filter(|r| read.contains(r)).collect()
 }

@@ -232,6 +232,10 @@ pub struct Binary {
     pub symbols: Vec<Symbol>,
     pub memory: MemoryMap,
     pub debug: DebugInfo,
+    /// Function starts from metadata (PE `.pdata` exception directory).
+    pub function_starts: Vec<u64>,
+    /// `true` when the entry point *is* `main` (Mach-O `LC_MAIN`).
+    pub entry_is_main: bool,
 }
 
 impl Binary {
@@ -283,6 +287,8 @@ impl Binary {
             symbols: Vec::new(),
             memory,
             debug: DebugInfo::default(),
+            function_starts: Vec::new(),
+            entry_is_main: false,
         }
     }
 
@@ -402,8 +408,16 @@ fn load_elf(e: &elf::Elf<'_>, bytes: &[u8]) -> Result<Binary> {
         }
     }
 
-    // GOT import slots from PLT relocations.
-    for rel in e.pltrelocs.iter() {
+    // GOT import slots from PLT and dynamic (GLOB_DAT) relocations.
+    for rel in e
+        .pltrelocs
+        .iter()
+        .chain(e.dynrelas.iter())
+        .chain(e.dynrels.iter())
+    {
+        if rel.r_sym == 0 {
+            continue;
+        }
         let Some(sym) = e.dynsyms.get(rel.r_sym) else {
             continue;
         };
@@ -440,6 +454,8 @@ fn load_elf(e: &elf::Elf<'_>, bytes: &[u8]) -> Result<Binary> {
             pdb_path: None,
             has_dwarf,
         },
+        function_starts: Vec::new(),
+        entry_is_main: false,
     })
 }
 
@@ -496,7 +512,7 @@ fn load_pe(p: &pe::PE<'_>, bytes: &[u8]) -> Result<Binary> {
     for im in &p.imports {
         symbols.push(Symbol {
             name: format!("{}!{}", im.dll, im.name),
-            addr: base + im.rva as u64,
+            addr: base + im.offset as u64,
             size: im.size as u64,
             kind: SymbolKind::Import,
         });
@@ -513,6 +529,26 @@ fn load_pe(p: &pe::PE<'_>, bytes: &[u8]) -> Result<Binary> {
             .filter(|s| s.kind == SymbolKind::Export && memory.is_executable(s.addr))
             .map(|s| s.addr),
     );
+
+    // x64 exception directory: every non-leaf function has a RUNTIME_FUNCTION.
+    // Chained entries (UNW_FLAG_CHAININFO) describe fragments of a parent and are skipped.
+    let mut function_starts = Vec::new();
+    if let Some(ex) = &p.exception_data {
+        for rf in ex.functions().flatten() {
+            let begin = base + u64::from(rf.begin_address);
+            let unwind = base + u64::from(rf.unwind_info_address & !1);
+            let chained = memory
+                .read(unwind, 1)
+                .map(|b| (b[0] >> 3) & 0x4 != 0)
+                .unwrap_or(false);
+            if !chained && memory.is_executable(begin) {
+                function_starts.push(begin);
+            }
+        }
+        function_starts.sort_unstable();
+        function_starts.dedup();
+        debug!(count = function_starts.len(), "PE .pdata function starts");
+    }
 
     let pdb_path = p
         .debug_data
@@ -535,6 +571,8 @@ fn load_pe(p: &pe::PE<'_>, bytes: &[u8]) -> Result<Binary> {
             pdb_path,
             has_dwarf: false,
         },
+        function_starts,
+        entry_is_main: false,
     })
 }
 
@@ -645,6 +683,8 @@ fn load_macho(m: &mach::MachO<'_>, bytes: &[u8]) -> Result<Binary> {
             pdb_path: None,
             has_dwarf,
         },
+        function_starts: Vec::new(),
+        entry_is_main: !m.old_style_entry && m.entry != 0,
     })
 }
 

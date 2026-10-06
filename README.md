@@ -110,12 +110,16 @@ rdisasm-gui [binary] [address|name]
 
 | Action | How |
 |---|---|
-| Open binary | Path field, CLI argument, or **drag & drop** |
-| Navigate | Click a function / symbol, **Go to** box (`0x…` or name), double-click a call in Listing |
+| Open binary | **File → Open… / `Ctrl+O`** (native dialog), CLI argument, or **drag & drop** onto the window |
+| Entry point | Detected automatically: on load the view jumps to the real `main` (found through MSVC / MinGW / glibc / Rust CRT start-up patterns); `Ctrl+E` / **⏵ Entry** goes to the raw entry point |
+| Navigate | Click a function / symbol, **Go to** (`G`, `0x…` or name), `Enter` / double-click on an operand to follow it |
+| Branch arrows | The `▶` arrows in Listing and the edges in Graph are clickable: click to jump to the branch target |
+| Context menu | Right-click any instruction: Jump to target / operand, switch targets, function start, Rename (`N`), Comment (`;`), Xrefs (`X`), Show in hex, Decompile (`F5`), Copy address / instruction / bytes / function / pseudocode |
 | Back | `Esc` or **← Back** |
+| Graph / Listing | `Space` toggles graph ↔ listing (as in IDA); `Tab` toggles the pseudocode panel, `F5` opens it |
 | Graph | Drag background to pan, mouse wheel to zoom (around the cursor), drag nodes to move them |
 | Edge colours | 🟩 True (taken) · 🟥 False (fall-through) · 🟦 Unconditional · 🟪 Switch · ⬜ Fall-through |
-| Views | Graph · Listing · Hex (synced with the cursor) · Strings · Xrefs · Pseudocode panel |
+| Views | Graph · Listing · Hex (synced with the cursor) · Strings · Xrefs · Pseudocode panel (IDA-style `Pseudocode-A`, clickable names) |
 
 ### Rhai plugins
 
@@ -198,10 +202,11 @@ crates/
 ## Limitations and roadmap
 
 * The decompiler targets readability rather than recompilable output. Flag modelling is simplified (`cmp`/`test` + `jcc`/`setcc`), and FPU / SIMD instructions are kept as `__asm__`.
-* Calling-convention inference assumes SysV x64 argument registers.
+* Calling conventions: Win64 (`rcx, rdx, r8, r9`) for PE, SysV (`rdi, rsi, rdx, rcx, r8, r9`) for ELF / Mach-O.
 * PDB / DWARF are detected but not parsed yet.
 * ARM64 binaries load (sections, symbols, strings), but disassembly is x86-only for now. `bad64` support is planned.
-* Planned: Python bindings (`pyo3`), saving and loading project databases, user renaming and comments, an ARM64 lifter.
+* Renames and comments live in memory for the session; saving project databases is planned.
+* Planned: Python bindings (`pyo3`), project databases, an ARM64 lifter.
 
 ## Testing
 

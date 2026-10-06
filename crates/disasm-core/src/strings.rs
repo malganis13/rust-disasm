@@ -26,7 +26,11 @@ fn printable(b: u8) -> bool {
 
 /// Scan every mapped section in parallel for strings of at least `min_len` chars.
 pub fn scan(memory: &MemoryMap, min_len: usize) -> Vec<FoundString> {
-    let sections: Vec<_> = memory.sections().collect();
+    // Like IDA's default: only data sections (fall back to everything for raw blobs).
+    let mut sections: Vec<_> = memory.sections().filter(|s| !s.perms.exec).collect();
+    if sections.is_empty() {
+        sections = memory.sections().collect();
+    }
     let mut out: Vec<FoundString> = sections
         .par_iter()
         .flat_map_iter(|s| {

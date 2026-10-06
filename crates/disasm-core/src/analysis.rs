@@ -105,6 +105,8 @@ pub struct Analysis {
     pub xrefs: XrefDb,
     pub strings: Vec<FoundString>,
     pub data_regions: Vec<DataRegion>,
+    /// Entry point / `main` detection result.
+    pub entry: crate::entry::EntryInfo,
 }
 
 impl Analysis {
@@ -125,6 +127,10 @@ impl Analysis {
                 xrefs,
                 strings,
                 data_regions: Vec::new(),
+                entry: crate::entry::EntryInfo {
+                    entry: binary.entry_points.first().copied(),
+                    ..Default::default()
+                },
             };
         };
 
@@ -137,6 +143,7 @@ impl Analysis {
                 .filter(|s| matches!(s.kind, SymbolKind::Function | SymbolKind::Export))
                 .map(|s| s.addr),
         );
+        seeds.extend(binary.function_starts.iter().copied());
         seeds.retain(|&a| binary.memory.is_executable(a));
 
         let mut functions = Self::discover(&dis, binary, seeds);
@@ -149,7 +156,30 @@ impl Analysis {
                 functions.extend(more);
             }
         }
-        info!(functions = functions.len(), "function discovery complete");
+        // Entry point / main detection (may add main, rust main as new functions).
+        let entry = crate::entry::detect(binary, &functions);
+        let extra: BTreeSet<u64> = [entry.main, entry.rust_main]
+            .into_iter()
+            .flatten()
+            .filter(|a| !functions.contains_key(a))
+            .collect();
+        if !extra.is_empty() {
+            let more = Self::discover_from(&dis, binary, extra, &functions);
+            functions.extend(more);
+        }
+        if let (Some(m), Some(n)) = (entry.main, &entry.main_name) {
+            if let Some(f) = functions.get_mut(&m) {
+                if f.name.starts_with("sub_") || f.name == "start" {
+                    f.name = n.clone();
+                }
+            }
+        }
+        if let Some(f) = entry.rust_main.and_then(|r| functions.get_mut(&r)) {
+            if f.name.starts_with("sub_") {
+                f.name = "rust_main".into();
+            }
+        }
+        info!(functions = functions.len(), main = ?entry.main, "function discovery complete");
 
         // Code xrefs (parallel, lock-free inserts).
         functions.par_iter().for_each(|(_, f)| {
@@ -195,6 +225,7 @@ impl Analysis {
             xrefs,
             strings,
             data_regions,
+            entry,
         }
     }
 

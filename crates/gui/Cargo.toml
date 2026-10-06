@@ -16,6 +16,8 @@ decompiler.workspace = true
 eframe = { workspace = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 egui.workspace = true
 petgraph.workspace = true
+iced-x86 = { workspace = true, features = ["decoder", "intel", "instr_info", "std"] }
+rfd = { version = "0.14", default-features = false, features = ["xdg-portal", "async-std"] }
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

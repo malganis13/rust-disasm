@@ -219,7 +219,7 @@ fn main() -> Result<()> {
                 let f = a
                     .function_containing(addr)
                     .with_context(|| format!("no function at {addr:#x}"))?;
-                outln!("{}", export::c_one(&bin, &a, f));
+                outln!("{}", export::c_one(&decompiler::Context::new(&bin, &a), f));
             }
         }
         Cmd::Cfg { file, target } => {

@@ -5,6 +5,8 @@
 mod app;
 mod graph_view;
 mod hex_view;
+mod names;
+mod pseudo;
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()

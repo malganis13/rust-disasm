@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use disasm_core::{analysis::Function, disasm::Flow};
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 
+use crate::context::Context;
 use crate::ir::*;
 use crate::DecompileError;
 
@@ -285,13 +286,27 @@ fn cc_binop(m: Mnemonic) -> Option<BinOp> {
     })
 }
 
-/// System V / Microsoft x64 integer argument registers (SysV order).
-pub const ARG_REGS_SYSV: [&str; 6] = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
-
 /// Lift a whole recovered function into IR.
-pub fn lift_function(func: &Function, bits: u32) -> Result<IrFunction, DecompileError> {
+pub fn lift_function(func: &Function, ctx: &Context) -> Result<IrFunction, DecompileError> {
     let entry_node = func.cfg.entry.ok_or(DecompileError::NoEntry)?;
-    let l = Lifter { bits };
+    let l = Lifter { bits: ctx.bits };
+    let arg_regs = ctx.conv.arg_regs();
+    // Arguments of a call: callee prototype if known, otherwise the contiguous
+    // prefix of argument registers written since the last call in this block.
+    let call_args = |target: Option<u64>, written: &[&'static str]| -> Vec<Expr> {
+        let n = target
+            .and_then(|t| ctx.param_counts.get(&t).copied())
+            .unwrap_or_else(|| arg_regs.iter().take_while(|r| written.contains(r)).count());
+        arg_regs[..n.min(arg_regs.len())]
+            .iter()
+            .map(|r| Expr::var(Var::new(Location::Reg(r))))
+            .collect()
+    };
+    let clobber = |stmts: &mut Vec<Stmt>| {
+        for r in ctx.conv.volatile_regs() {
+            stmts.push(Stmt::Assign(Var::new(Location::Reg(r)), Expr::Unknown("undef")));
+        }
+    };
 
     // Stable block numbering by address, entry first.
     let mut nodes: Vec<_> = func.cfg.graph.node_indices().collect();
@@ -309,29 +324,54 @@ pub fn lift_function(func: &Function, bits: u32) -> Result<IrFunction, Decompile
         let mut stmts = Vec::new();
         let mut flags: Option<(Expr, Expr)> = None;
         let mut term = None;
+        let mut written: Vec<&'static str> = Vec::new();
         for a in &bb.insns {
             let insn = &func.insns[a];
             let raw = &insn.raw;
+            let before = stmts.len();
             lift_insn(&l, raw, &mut stmts, &mut flags);
+            for st in &stmts[before..] {
+                if let Stmt::Assign(
+                    Var {
+                        loc: Location::Reg(r),
+                        ..
+                    },
+                    _,
+                ) = st
+                {
+                    if !written.contains(r) {
+                        written.push(r);
+                    }
+                }
+            }
             match &insn.flow {
-                Flow::Call(t) => stmts.push(Stmt::Call {
-                    target: Callee::Direct(*t),
-                    args: Vec::new(),
-                    ret: Some(Var::new(Location::Reg("rax"))),
-                }),
+                Flow::Call(t) => {
+                    stmts.push(Stmt::Call {
+                        target: Callee::Direct(*t),
+                        args: call_args(Some(*t), &written),
+                        ret: Some(Var::new(Location::Reg("rax"))),
+                    });
+                    clobber(&mut stmts);
+                    written.clear();
+                }
                 Flow::CallNoReturn(t) => {
                     stmts.push(Stmt::Call {
                         target: Callee::Direct(*t),
-                        args: Vec::new(),
+                        args: call_args(Some(*t), &written),
                         ret: None,
                     });
                     term = Some(Terminator::Exit);
                 }
-                Flow::IndirectCall => stmts.push(Stmt::Call {
-                    target: Callee::Indirect(l.read(raw, 0)),
-                    args: Vec::new(),
-                    ret: Some(Var::new(Location::Reg("rax"))),
-                }),
+                Flow::IndirectCall => {
+                    let slot = insn.mem_refs.first().map(|r| r.addr);
+                    stmts.push(Stmt::Call {
+                        target: Callee::Indirect(l.read(raw, 0)),
+                        args: call_args(slot, &written),
+                        ret: Some(Var::new(Location::Reg("rax"))),
+                    });
+                    clobber(&mut stmts);
+                    written.clear();
+                }
                 Flow::Return => {
                     term = Some(Terminator::Return(Some(Expr::var(Var::new(Location::Reg(
                         "rax",
@@ -345,7 +385,7 @@ pub fn lift_function(func: &Function, bits: u32) -> Result<IrFunction, Decompile
                             // Tail call.
                             stmts.push(Stmt::Call {
                                 target: Callee::Direct(*t),
-                                args: Vec::new(),
+                                args: call_args(Some(*t), &written),
                                 ret: Some(Var::new(Location::Reg("rax"))),
                             });
                             Terminator::Return(Some(Expr::var(Var::new(Location::Reg("rax")))))
@@ -373,7 +413,7 @@ pub fn lift_function(func: &Function, bits: u32) -> Result<IrFunction, Decompile
                     term = Some(if targets.is_empty() {
                         stmts.push(Stmt::Call {
                             target: Callee::Indirect(l.read(raw, 0)),
-                            args: Vec::new(),
+                            args: call_args(insn.mem_refs.first().map(|r| r.addr), &written),
                             ret: Some(Var::new(Location::Reg("rax"))),
                         });
                         Terminator::Return(Some(Expr::var(Var::new(Location::Reg("rax")))))
