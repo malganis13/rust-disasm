@@ -27,7 +27,14 @@ fn printable(b: u8) -> bool {
 /// Scan every mapped section in parallel for strings of at least `min_len` chars.
 pub fn scan(memory: &MemoryMap, min_len: usize) -> Vec<FoundString> {
     // Like IDA's default: only data sections (fall back to everything for raw blobs).
-    let mut sections: Vec<_> = memory.sections().filter(|s| !s.perms.exec).collect();
+    // Mach-O keeps `__cstring` / `__const` inside the executable `__TEXT` segment.
+    let mut sections: Vec<_> = memory
+        .sections()
+        .filter(|s| {
+            let n = s.name.to_ascii_lowercase();
+            !s.perms.exec || n.contains("cstring") || n.contains("const") || n.contains("rodata")
+        })
+        .collect();
     if sections.is_empty() {
         sections = memory.sections().collect();
     }
